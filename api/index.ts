@@ -118,7 +118,7 @@ function createPaymentMiddleware() {
     payTo,
     {
       "POST /v1/chat/completions": {
-        price: "$0.001",
+        price: "$0.20",
         network: "base-sepolia",
       },
     }
