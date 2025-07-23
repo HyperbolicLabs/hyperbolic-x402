@@ -189,6 +189,10 @@ app.get('/ready', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the Hyperbolic x402 API');
+});
+
 // Main chat completions endpoint
 app.post("/v1/chat/completions", async (req, res) => {
   const requestId = randomUUID();
