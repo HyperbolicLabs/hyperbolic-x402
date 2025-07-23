@@ -6,10 +6,7 @@ import helmet from 'helmet';
 import { z } from 'zod';
 import winston from 'winston';
 import cors from 'cors';
-import path from 'path';
-import { randomUUID } from 'crypto';
 
-// Configure structured logging
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -30,12 +27,10 @@ const logger = winston.createLogger({
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Get environment variables (validation moved to endpoint level)
 const facilitatorUrl = process.env.FACILITATOR_URL;
 const payTo = process.env.ADDRESS;
 const hyperbolicApiKey = process.env.HYPERBOLIC_API_KEY;
 
-// Function to check if environment variables are configured
 function validateEnvironmentVariables() {
   const missing = [];
   if (!facilitatorUrl) missing.push('FACILITATOR_URL');
@@ -44,7 +39,6 @@ function validateEnvironmentVariables() {
   return missing;
 }
 
-// Request validation schema
 const chatCompletionSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.object({
@@ -57,7 +51,6 @@ const chatCompletionSchema = z.object({
   stream: z.boolean().optional()
 });
 
-// Response type definitions
 type ChatCompletionMessage = {
   role: 'assistant' | 'user' | 'system';
   content: string;
@@ -85,28 +78,31 @@ type ChatCompletionResponse = {
   usage?: ChatCompletionUsage;
 };
 
-// Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable CSP for API
+  contentSecurityPolicy: false,
 }));
 
-// CORS
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
   credentials: true
 }));
 
-// Minimal logging for errors and important events only
 app.use((req, res, next) => {
   const startTime = Date.now();
+  const requestId = req.headers['x-request-id'] as string;
+  
   res.on('finish', () => {
-    // Only log errors and payment requests
     if (res.statusCode >= 400 || req.url.includes('/v1/chat/completions')) {
       const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-      logger[level](`${req.method} ${req.url} ${res.statusCode}`, {
-        statusCode: res.statusCode,
-        duration: Date.now() - startTime
-      });
+      const duration = Date.now() - startTime;
+      
+      if (res.statusCode >= 400) {
+        logger[level](`${req.method} ${req.url} ${res.statusCode}`, {
+          statusCode: res.statusCode,
+          duration,
+          requestId: requestId || 'missing'
+        });
+      }
     }
   });
   next();
@@ -115,7 +111,6 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
-// Create payment middleware instance (will be initialized when needed)
 function createPaymentMiddleware() {
   if (!payTo) {
     throw new Error('ADDRESS environment variable not configured');
@@ -131,16 +126,14 @@ function createPaymentMiddleware() {
   );
 }
 
-// Handle favicon requests silently to prevent 404 errors in logs
 app.get('/favicon.ico', (req, res) => {
-  res.status(204).end(); // No Content
+  res.status(204).end();
 });
 
 app.get('/favicon.png', (req, res) => {
-  res.status(204).end(); // No Content
+  res.status(204).end();
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -150,10 +143,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Ready check (checks external dependencies)
 app.get('/ready', async (req, res) => {
   try {
-    // Check environment variables first
     const missingEnvVars = validateEnvironmentVariables();
     if (missingEnvVars.length > 0) {
       return res.status(503).json({ 
@@ -163,7 +154,6 @@ app.get('/ready', async (req, res) => {
       });
     }
 
-    // Test Hyperbolic API connectivity
     const testResponse = await fetch('https://api.hyperbolic.xyz/v1/models', {
       headers: { Authorization: `Bearer ${hyperbolicApiKey}` }
     });
@@ -193,14 +183,84 @@ app.get('/', (req, res) => {
   res.send('Welcome to the Hyperbolic x402 API');
 });
 
-// Main chat completions endpoint
-app.post("/v1/chat/completions", async (req, res) => {
-  const requestId = randomUUID();
+app.post("/v1/transaction-log", async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  if (!requestId) {
+    logger.error('Missing request ID for transaction log', { 
+      url: req.url,
+      method: req.method
+    });
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'X-Request-ID header is required for request correlation',
+      timestamp: new Date().toISOString()
+    });
+  }
   
   try {
-    // Check environment variables first
+    const transactionHash = req.headers['x-transaction-hash'] as string;
+    const paymentNetwork = req.headers['x-payment-network'] as string;
+    const payerAddress = req.headers['x-payer-address'] as string;
+    
+    logger.info('Transaction confirmed', {
+      requestId,
+      transaction: transactionHash,
+      network: paymentNetwork,
+      payer: payerAddress,
+      model: req.body?.model,
+      tokens: req.body?.tokens
+    });
+    
+    res.status(200).json({
+      status: 'success',
+      message: 'Transaction confirmation logged',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    logger.error(`Transaction log error: ${error.message}`, { 
+      requestId,
+      error: error.message
+    });
+    
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to log transaction confirmation',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post("/v1/chat/completions", async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  if (!requestId) {
+    logger.error('Missing request ID', { 
+      url: req.url,
+      method: req.method
+    });
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'X-Request-ID header is required for request correlation',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  logger.info('Chat completion request', { 
+    requestId,
+    model: req.body?.model
+  });
+  
+  try {
     const missingEnvVars = validateEnvironmentVariables();
     if (missingEnvVars.length > 0) {
+      logger.error('Configuration error', { 
+        requestId, 
+        missingEnvVars
+      });
       return res.status(500).json({
         error: 'Configuration Error',
         message: `Server misconfigured. Missing environment variables: ${missingEnvVars.join(', ')}`,
@@ -209,10 +269,8 @@ app.post("/v1/chat/completions", async (req, res) => {
       });
     }
 
-    // Validate request body
     const validatedBody = chatCompletionSchema.parse(req.body);
     
-    // Call Hyperbolic API (before any payment)
     const response = await fetch('https://api.hyperbolic.xyz/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -224,14 +282,15 @@ app.post("/v1/chat/completions", async (req, res) => {
     
     if (!response.ok) {
       const errorText = await response.text();
-      logger.error(`Hyperbolic API error ${response.status}`, { requestId });
+      logger.error(`Hyperbolic API error ${response.status}`, { 
+        requestId,
+        model: validatedBody.model
+      });
       
-      // Parse error message to give user helpful feedback
       let userMessage = 'The AI service is currently unavailable';
       try {
         const errorData = JSON.parse(errorText);
         if (errorData.message) {
-          // For model errors, extract and format the valid models list
           if (errorData.message.includes('allowed now')) {
             const match = errorData.message.match(/Only (.+?) allowed now/);
             if (match) {
@@ -250,7 +309,7 @@ app.post("/v1/chat/completions", async (req, res) => {
           }
         }
       } catch {
-        // Keep generic message if we can't parse the error
+        // Keep generic message if we can't parse the error response  
       }
       
       return res.status(response.status).json({
@@ -263,13 +322,11 @@ app.post("/v1/chat/completions", async (req, res) => {
 
     const json = await response.json() as ChatCompletionResponse;
     
-    // Validate response structure (basic check)
     if (!json.choices || !Array.isArray(json.choices)) {
       throw new Error('Invalid response format from Hyperbolic API');
     }
+        const chatCompletionPayment = createPaymentMiddleware();
     
-    // Only process payment AFTER we have a successful API response
-    const chatCompletionPayment = createPaymentMiddleware();
     await new Promise<void>((resolve, reject) => {
       chatCompletionPayment(req, res, (err) => {
         if (err) {
@@ -279,52 +336,15 @@ app.post("/v1/chat/completions", async (req, res) => {
         }
       });
     });
-    
-    // Extract payment details from response header (same way client does)
-    const paymentHeader = res.getHeader('x-payment-response');
-    if (paymentHeader) {
-      try {
-        const paymentResponse = decodeXPaymentResponse(paymentHeader);
-        const paymentDetails = {
-          success: true,
-          transaction: paymentResponse.transaction,
-          network: paymentResponse.network,
-          payer: paymentResponse.payer
-        };
-        
-        logger.info('Payment processed', paymentDetails);
-        
-        // Also log request context separately for debugging
-        logger.info('Request context', { 
-          requestId, 
-          model: validatedBody.model,
-          tokens: json.usage?.total_tokens
-        });
-      } catch (error) {
-        logger.warn('Failed to decode payment response', { requestId, error: error.message });
-        logger.info('Payment processed', { 
-          success: false,
-          error: 'Failed to decode payment response',
-          requestId, 
-          model: validatedBody.model,
-          tokens: json.usage?.total_tokens 
-        });
-      }
-    } else {
-      logger.info('Payment processed', { 
-        success: false,
-        error: 'No payment header found',
-        requestId, 
-        model: validatedBody.model,
-        tokens: json.usage?.total_tokens 
-      });
-    }
-    
+
     res.status(200).json(json);
     
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn(`Validation error`, { requestId });
+      logger.warn('Validation error', { 
+        requestId,
+        errors: error.errors
+      });
       return res.status(400).json({
         error: 'Validation Error',
         message: 'Invalid request format',
@@ -334,7 +354,10 @@ app.post("/v1/chat/completions", async (req, res) => {
       });
     }
     
-    logger.error(`Chat completion error: ${error.message}`, { requestId });
+    logger.error(`Chat completion error: ${error.message}`, { 
+      requestId,
+      error: error.message
+    });
     
     res.status(500).json({
       error: 'Internal Server Error',
@@ -345,25 +368,31 @@ app.post("/v1/chat/completions", async (req, res) => {
   }
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
+  const requestId = req.headers['x-request-id'] as string;
+  
   logger.error(`Unhandled error: ${err.message}`, { 
     url: req.url,
-    method: req.method 
+    method: req.method,
+    requestId: requestId || 'missing',
+    error: err.message
   });
   
   res.status(500).json({
     error: 'Internal Server Error',
     message: 'An unexpected error occurred',
+    requestId: requestId || undefined,
     timestamp: new Date().toISOString()
   });
 });
 
-// 404 handler
 app.use('*', (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+  
   res.status(404).json({ 
     error: 'Not Found',
     message: `Route ${req.originalUrl} not found`,
+    requestId: requestId || undefined,
     timestamp: new Date().toISOString()
   });
 });

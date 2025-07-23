@@ -8,6 +8,7 @@ config();
 
 const privateKey = process.env.PRIVATE_KEY as Hex;
 const baseURL = 'https://hyperbolic-x402.vercel.app';
+// const baseURL = 'http://localhost:3000';
 
 if (!privateKey) {
   console.error("Missing PRIVATE_KEY environment variable");
@@ -16,22 +17,23 @@ if (!privateKey) {
 
 const account = privateKeyToAccount(privateKey);
 const url = `${baseURL}/v1/chat/completions`;
-
-// Generate request UUID for tracking
 const requestId = randomUUID();
 
-// Use regular fetch instead of debug fetch
 const fetchWithPayment = wrapFetchWithPayment(fetch, account);
 
-console.log('About to make request to:', url);
-console.log('Using account:', account.address);
-console.log('Request ID:', requestId);
+console.log('Request Details:');
+console.log(JSON.stringify({
+  requestId,
+  url,
+  account: account.address
+}, null, 2));
 
 const requestOptions: RequestInit = {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
     "Accept": "application/json",
+    "X-Request-ID": requestId,
   },
   body: JSON.stringify({
     model: "meta-llama/Llama-3.2-3B-Instruct",
@@ -48,21 +50,50 @@ const requestOptions: RequestInit = {
 fetchWithPayment(url, requestOptions)
   .then(async response => {
     const body = await response.json();
-    console.log(body);
     
-    const messageContent = body.choices?.[0]?.message?.content;
-    console.log("\nResponse:", messageContent);
-
+    console.log('\nModel Response:');
+    console.log(JSON.stringify(body, null, 2));
+    
     const paymentHeader = response.headers.get("x-payment-response");
     if (paymentHeader) {
       const paymentResponse = decodeXPaymentResponse(paymentHeader);
-      console.log("Payment processed:", paymentResponse);
+      
+      const confirmationOptions: RequestInit = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Request-ID": requestId,
+          "X-Transaction-Hash": paymentResponse.transaction,
+          "X-Payment-Network": paymentResponse.network,
+          "X-Payer-Address": paymentResponse.payer,
+        },
+        body: JSON.stringify({
+          requestId,
+          transactionHash: paymentResponse.transaction,
+          network: paymentResponse.network,
+          payer: paymentResponse.payer,
+          model: body.model,
+          tokens: body.usage?.total_tokens
+        })
+      };
+      
+      try {
+        const confirmResponse = await fetch(`${baseURL}/v1/transaction-log`, confirmationOptions);
+        if (confirmResponse.ok) {
+          console.log('Transaction Hash:', paymentResponse.transaction);
+        } else {
+          console.log('Failed to send transaction confirmation:', confirmResponse.status);
+        }
+      } catch (error) {
+        console.log('Error sending transaction confirmation:', error.message);
+      }
     } else {
-      console.log("No payment processed (request failed)");
+      console.log('No payment header found');
     }
+    
   })
   .catch(error => {
-    console.error("Error:", error.message || error);
+    console.error("Request failed:", error.message || error);
     if (error.code === 'ECONNREFUSED') {
       console.error("Is the server running on localhost:3000?");
     }
