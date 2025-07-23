@@ -1,14 +1,13 @@
-require('dotenv').config();
-
-const express = require('express');
-const { paymentMiddleware } = require('x402-express');
-const { decodeXPaymentResponse } = require('x402-fetch');
-const helmet = require('helmet');
-const { z } = require('zod');
-const winston = require('winston');
-const cors = require('cors');
-const path = require('path');
-const { randomUUID } = require('crypto');
+import 'dotenv/config';
+import express from 'express';
+import { paymentMiddleware } from 'x402-express';
+import { decodeXPaymentResponse } from 'x402-fetch';
+import helmet from 'helmet';
+import { z } from 'zod';
+import winston from 'winston';
+import cors from 'cors';
+import path from 'path';
+import { randomUUID } from 'crypto';
 
 // Configure structured logging
 const logger = winston.createLogger({
@@ -31,18 +30,18 @@ const logger = winston.createLogger({
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Validate environment variables
+// Get environment variables (validation moved to endpoint level)
 const facilitatorUrl = process.env.FACILITATOR_URL;
 const payTo = process.env.ADDRESS;
 const hyperbolicApiKey = process.env.HYPERBOLIC_API_KEY;
 
-if (!facilitatorUrl || !payTo || !hyperbolicApiKey) {
-  logger.error("Missing required environment variables", {
-    hasFacilitatorUrl: !!facilitatorUrl,
-    hasAddress: !!payTo,
-    hasHyperbolicApiKey: !!hyperbolicApiKey
-  });
-  process.exit(1);
+// Function to check if environment variables are configured
+function validateEnvironmentVariables() {
+  const missing = [];
+  if (!facilitatorUrl) missing.push('FACILITATOR_URL');
+  if (!payTo) missing.push('ADDRESS');
+  if (!hyperbolicApiKey) missing.push('HYPERBOLIC_API_KEY');
+  return missing;
 }
 
 // Request validation schema
@@ -116,16 +115,21 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
-// Create payment middleware instance
-const chatCompletionPayment = paymentMiddleware(
-  payTo,
-  {
-    "POST /v1/chat/completions": {
-      price: "$0.001",
-      network: "base-sepolia",
-    },
+// Create payment middleware instance (will be initialized when needed)
+function createPaymentMiddleware() {
+  if (!payTo) {
+    throw new Error('ADDRESS environment variable not configured');
   }
-);
+  return paymentMiddleware(
+    payTo,
+    {
+      "POST /v1/chat/completions": {
+        price: "$0.001",
+        network: "base-sepolia",
+      },
+    }
+  );
+}
 
 // Handle favicon requests silently to prevent 404 errors in logs
 app.get('/favicon.ico', (req, res) => {
@@ -149,6 +153,16 @@ app.get('/health', (req, res) => {
 // Ready check (checks external dependencies)
 app.get('/ready', async (req, res) => {
   try {
+    // Check environment variables first
+    const missingEnvVars = validateEnvironmentVariables();
+    if (missingEnvVars.length > 0) {
+      return res.status(503).json({ 
+        status: 'not ready',
+        error: `Missing environment variables: ${missingEnvVars.join(', ')}`,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // Test Hyperbolic API connectivity
     const testResponse = await fetch('https://api.hyperbolic.xyz/v1/models', {
       headers: { Authorization: `Bearer ${hyperbolicApiKey}` }
@@ -180,7 +194,18 @@ app.post("/v1/chat/completions", async (req, res) => {
   const requestId = randomUUID();
   
   try {
-    // Validate request body FIRST
+    // Check environment variables first
+    const missingEnvVars = validateEnvironmentVariables();
+    if (missingEnvVars.length > 0) {
+      return res.status(500).json({
+        error: 'Configuration Error',
+        message: `Server misconfigured. Missing environment variables: ${missingEnvVars.join(', ')}`,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Validate request body
     const validatedBody = chatCompletionSchema.parse(req.body);
     
     // Call Hyperbolic API (before any payment)
@@ -240,6 +265,7 @@ app.post("/v1/chat/completions", async (req, res) => {
     }
     
     // Only process payment AFTER we have a successful API response
+    const chatCompletionPayment = createPaymentMiddleware();
     await new Promise<void>((resolve, reject) => {
       chatCompletionPayment(req, res, (err) => {
         if (err) {
@@ -325,25 +351,15 @@ app.use('*', (req, res) => {
   });
 });
 
-// Graceful shutdown handlers
-let server;
-
-function startServer() {
-  server = app.listen(PORT, () => {
+// Local development server (only runs when not in Vercel)
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, () => {
     logger.info(`Server started`, { port: PORT, env: process.env.NODE_ENV });
   });
   
-  // Handle server errors
-  server.on('error', (error) => {
-    logger.error('Server error', { error: error.message });
-    process.exit(1);
-  });
-}
-
-function gracefulShutdown(signal) {
-  logger.info(`${signal} received, shutting down gracefully`);
-  
-  if (server) {
+  // Graceful shutdown handlers for local development
+  function gracefulShutdown(signal) {
+    logger.info(`${signal} received, shutting down gracefully`);
     server.close((err) => {
       if (err) {
         logger.error('Error during server shutdown', { error: err.message });
@@ -352,23 +368,11 @@ function gracefulShutdown(signal) {
       logger.info('Server closed successfully');
       process.exit(0);
     });
-    
-    // Force shutdown after 10 seconds
-    setTimeout(() => {
-      logger.error('Forced shutdown due to timeout');
-      process.exit(1);
-    }, 10000);
-  } else {
-    process.exit(0);
   }
-}
 
-// Only set up graceful shutdown in non-Vercel environments
-if (!process.env.VERCEL) {
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
   
-  // Handle uncaught exceptions
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught exception', { error: error.message, stack: error.stack });
     process.exit(1);
@@ -378,11 +382,6 @@ if (!process.env.VERCEL) {
     logger.error('Unhandled rejection', { reason, promise });
     process.exit(1);
   });
-  
-  startServer();
-} else {
-  // In Vercel, just listen normally
-  app.listen(3000, () => logger.info('Server ready on port 3000.'));
 }
 
-module.exports = app;
+export default app;
