@@ -280,18 +280,16 @@ app.post("/v1/chat/completions", async (req, res) => {
       });
     });
     
-    // Extract and log payment details
+    // Extract payment details from response header (same way client does)
     const paymentHeader = res.getHeader('x-payment-response');
     if (paymentHeader) {
       try {
-        const paymentResponse = decodeXPaymentResponse(paymentHeader as string);
-        
-        // Format payment details for clean logging
+        const paymentResponse = decodeXPaymentResponse(paymentHeader);
         const paymentDetails = {
           success: true,
-          transaction: paymentResponse.transactionHash || paymentResponse.txHash || 'unknown',
-          network: paymentResponse.network || 'base-sepolia',
-          payer: paymentResponse.payer || paymentResponse.from || 'unknown'
+          transaction: paymentResponse.transaction,
+          network: paymentResponse.network,
+          payer: paymentResponse.payer
         };
         
         logger.info('Payment processed', paymentDetails);
