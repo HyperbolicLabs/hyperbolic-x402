@@ -1,0 +1,67 @@
+# Environment files
+.env
+.env.local
+.env.example
+
+# Development and testing files
+client.ts
+README.md
+
+# Git and version control
+.git/
+.gitignore
+
+# Node modules (usually handled automatically but good to be explicit)
+node_modules/
+
+# Logs
+*.log
+error.log
+combined.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript build artifacts
+*.tsbuildinfo
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Test files
+*.test.js
+*.test.ts
+test/
+tests/
+__tests__/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Documentation
+docs/ 
