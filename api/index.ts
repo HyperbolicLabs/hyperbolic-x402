@@ -281,15 +281,28 @@ app.post("/v1/chat/completions", async (req, res) => {
     if (paymentHeader) {
       try {
         const paymentResponse = decodeXPaymentResponse(paymentHeader as string);
-        logger.info('Payment processed', { 
+        
+        // Format payment details for clean logging
+        const paymentDetails = {
+          success: true,
+          transaction: paymentResponse.transactionHash || paymentResponse.txHash || 'unknown',
+          network: paymentResponse.network || 'base-sepolia',
+          payer: paymentResponse.payer || paymentResponse.from || 'unknown'
+        };
+        
+        logger.info('Payment processed', paymentDetails);
+        
+        // Also log request context separately for debugging
+        logger.info('Request context', { 
           requestId, 
           model: validatedBody.model,
-          tokens: json.usage?.total_tokens,
-          payment: paymentResponse
+          tokens: json.usage?.total_tokens
         });
       } catch (error) {
         logger.warn('Failed to decode payment response', { requestId, error: error.message });
         logger.info('Payment processed', { 
+          success: false,
+          error: 'Failed to decode payment response',
           requestId, 
           model: validatedBody.model,
           tokens: json.usage?.total_tokens 
@@ -297,6 +310,8 @@ app.post("/v1/chat/completions", async (req, res) => {
       }
     } else {
       logger.info('Payment processed', { 
+        success: false,
+        error: 'No payment header found',
         requestId, 
         model: validatedBody.model,
         tokens: json.usage?.total_tokens 

@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 config();
 
 const privateKey = process.env.PRIVATE_KEY as Hex;
-const baseURL = 'http://localhost:3000';
+const baseURL = 'https://hyperbolic-x402.vercel.app';
 
 if (!privateKey) {
   console.error("Missing PRIVATE_KEY environment variable");
