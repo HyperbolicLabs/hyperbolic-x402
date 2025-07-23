@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import { paymentMiddleware } from 'x402-express';
-import { decodeXPaymentResponse } from 'x402-fetch';
 import helmet from 'helmet';
 import { z } from 'zod';
 import winston from 'winston';
