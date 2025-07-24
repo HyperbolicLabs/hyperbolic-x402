@@ -1,106 +1,104 @@
-# x402 Chat Completions API on Vercel
+# Hyperbolic x Coinbase x402 Inference API
 
-This is an Express.js application that provides OpenAI-compatible chat completions using Hyperbolic AI, with x402 payment processing integration.
+## What is x402?
 
-## Features
+x402 is an open payment standard that enables services to charge for access to their APIs and content directly over HTTP using the `402 Payment Required` status code. It allows clients to programmatically pay for resources without accounts, sessions, or credential management, using crypto-native payments for speed, privacy, and efficiency.
 
-- OpenAI-compatible `/v1/chat/completions` endpoint
-- Hyperbolic AI integration for LLM inference
-- x402 payment processing (Base Sepolia network)
-- Comprehensive logging with Winston
-- Request validation with Zod
-- Security middleware with Helmet
-- Health and readiness checks
-- Graceful shutdown handling
+For more detailed information about x402, visit the [official documentation](https://x402.gitbook.io/x402).
 
-## API Endpoints
+## Implementation Overview
 
-### Chat Completions
-- `POST /v1/chat/completions` - OpenAI-compatible chat completions endpoint
-  - Requires payment via x402 ($0.001 per request)
-  - Supports standard OpenAI parameters: model, messages, max_tokens, temperature, top_p, stream
+This integration demonstrates how to interact with the Hyperbolic API using x402 payments. The implementation uses the `x402-fetch` library to handle payment flows transparently, allowing you to access any model available on the [Hyperbolic Models](https://app.hyperbolic.ai/models) page.
 
-### Health Checks
-- `GET /health` - Basic health check
-- `GET /ready` - Readiness check (validates external dependencies)
+## API Endpoint
 
-## Setup
+The integration targets the Hyperbolic x402 chat completions endpoint:
 
-1. Install dependencies:
-```bash
-pnpm install
+```
+POST https://hyperbolic-x402.vercel.app/v1/chat/completions
 ```
 
-2. Create a `.env` file with the required environment variables:
-```bash
-# Hyperbolic AI API Key
-HYPERBOLIC_API_KEY=your_hyperbolic_api_key_here
+## Request Parameters
 
-# Payment Configuration
-ADDRESS=0x1234567890123456789012345678901234567890
-FACILITATOR_URL=https://your-facilitator-url.com
+### Headers
 
-# For testing with the client
-PRIVATE_KEY=0x1234567890123456789012345678901234567890123456789012345678901234
+| Header         | Required | Description                              |
+| -------------- | -------- | ---------------------------------------- |
+| `Content-Type` | Yes      | Must be `application/json`               |
+| `Accept`       | Yes      | Must be `application/json`               |
+| `X-Request-ID` | Yes      | Unique identifier for the request (UUID) |
 
-# Optional Configuration
-ALLOWED_ORIGINS=http://localhost:3000,https://yourdomain.com
-LOG_LEVEL=info
-NODE_ENV=development
-PORT=3000
+### Request Body
+
+The request body follows the OpenAI-compatible chat completions format:
+
+| Parameter     | Type    | Required | Description                                                   |
+| ------------- | ------- | -------- | ------------------------------------------------------------- |
+| `model`       | string  | Yes      | The model to use (e.g., `"meta-llama/Llama-3.2-3B-Instruct"`) |
+| `messages`    | array   | Yes      | Array of message objects with `role` and `content`            |
+| `max_tokens`  | number  | No       | Maximum number of tokens to generate (default: 512)           |
+| `temperature` | number  | No       | Controls randomness (0.0 to 2.0, default: 0.1)                |
+| `top_p`       | number  | No       | Nuclear sampling parameter (default: 0.9)                     |
+| `stream`      | boolean | No       | Whether to stream responses (default: false)                  |
+
+### Example Request Body
+
+```json
+{
+  "model": "meta-llama/Llama-3.2-3B-Instruct",
+  "messages": [
+    { "role": "user", "content": "What is 1+1?" }
+  ],
+  "max_tokens": 512,
+  "temperature": 0.1,
+  "top_p": 0.9,
+  "stream": false
+}
 ```
 
-3. Start the development server:
-```bash
-pnpm run dev
-```
+## Environment Setup
 
-## Testing with the Client
+Before running the client, you'll need to set up your environment:
 
-A test client is included to demonstrate x402 payment functionality:
+1. Create a `.env` file with your Ethereum private key:
+   ```Text .env
+   PRIVATE_KEY=0x...
+   ```
 
-```bash
+2. Install dependencies:
+   ```javascript TypeScript
+   pnpm install
+   ```
+
+## Payment Flow
+
+The x402 payment flow works as follows:
+
+1. Client makes a request to the API endpoint
+2. If payment is required, the server responds with `402 Payment Required` and payment instructions
+3. The `x402-fetch` wrapper automatically handles the payment using your private key
+4. Upon successful payment verification, the server processes your request and returns the model response
+5. Transaction details are logged for confirmation
+
+## Example Implementation
+
+You can see a complete working example in the [`client.ts`](https://github.com/HyperbolicLabs/hyperbolic-x402/blob/main/client.ts) file in our official repository. The example demonstrates:
+
+- Setting up the x402-enabled fetch wrapper
+- Making a chat completion request
+- Handling payment responses
+- Logging transaction confirmations
+
+To run the example:
+
+```node TypeScript
 pnpm run client
 ```
 
-The client will:
-1. Create an account from your private key
-2. Make a chat completion request with payment
-3. Display the AI response and payment details
+## Response Format
 
-## Usage Example
+Successful responses follow the OpenAI-compatible format and include:
 
-```bash
-curl -X POST https://your-vercel-app.vercel.app/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-3.2-3B-Instruct",
-    "messages": [
-      {"role": "user", "content": "Hello, how are you?"}
-    ],
-    "max_tokens": 100
-  }'
-```
-
-## Deployment
-
-### One-Click Deploy
-
-Deploy to Vercel:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/x402-hyperbolic-vercel)
-
-### Manual Deploy
-
-```bash
-pnpm run deploy
-```
-
-## Environment Variables for Production
-
-Make sure to set these in your Vercel dashboard:
-- `HYPERBOLIC_API_KEY`
-- `ADDRESS` 
-- `FACILITATOR_URL`
-- `ALLOWED_ORIGINS` (optional)
-- `LOG_LEVEL` (optional)
+- The model's completion response
+- Usage statistics (token counts)
+- Payment confirmation details in the `x-payment-response` header
