@@ -24,6 +24,7 @@
 	"author": "",
 	"license": "ISC",
 	"dependencies": {
+		"@coinbase/x402": "^0.4.2",
 		"@types/cors": "^2.8.19",
 		"cors": "^2.8.5",
 		"dotenv": "^17.2.0",

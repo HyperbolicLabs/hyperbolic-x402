@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { z } from 'zod';
 import winston from 'winston';
 import cors from 'cors';
+import { facilitator } from '@coinbase/x402';
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -26,15 +27,18 @@ const logger = winston.createLogger({
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const facilitatorUrl = process.env.FACILITATOR_URL;
-const payTo = process.env.ADDRESS;
+// const facilitatorUrl = process.env.FACILITATOR_URL; for base-sepolia
+const payTo = process.env.ADDRESS_MAINNET;
 const hyperbolicApiKey = process.env.HYPERBOLIC_API_KEY;
+
 
 function validateEnvironmentVariables() {
   const missing = [];
-  if (!facilitatorUrl) missing.push('FACILITATOR_URL');
-  if (!payTo) missing.push('ADDRESS');
+  // if (!facilitatorUrl) missing.push('FACILITATOR_URL');
+  if (!payTo) missing.push('ADDRESS_MAINNET');
   if (!hyperbolicApiKey) missing.push('HYPERBOLIC_API_KEY');
+  if (!process.env.CDP_API_KEY_ID) missing.push('CDP_API_KEY_ID');
+  if (!process.env.CDP_API_KEY_SECRET) missing.push('CDP_API_KEY_SECRET');
   return missing;
 }
 
@@ -94,7 +98,7 @@ app.use((req, res, next) => {
     if (res.statusCode >= 400 || req.url.includes('/v1/chat/completions')) {
       const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
       const duration = Date.now() - startTime;
-      
+    
       if (res.statusCode >= 400) {
         logger[level](`${req.method} ${req.url} ${res.statusCode}`, {
           statusCode: res.statusCode,
@@ -119,9 +123,10 @@ function createPaymentMiddleware() {
     {
       "POST /v1/chat/completions": {
         price: "$0.1",
-        network: "base-sepolia",
+        network: "base",
       },
-    }
+    },
+    facilitator,
   );
 }
 
@@ -235,7 +240,6 @@ app.post("/v1/transaction-log", async (req, res) => {
 
 app.post("/v1/chat/completions", async (req, res) => {
   const requestId = req.headers['x-request-id'] as string;
-  
   if (!requestId) {
     logger.error('Missing request ID', { 
       url: req.url,
@@ -366,6 +370,13 @@ app.post("/v1/chat/completions", async (req, res) => {
     });
   }
 });
+
+// app.use(paymentMiddleware(payTo, {
+//   "POST /v1/chat/completions": {
+//     price: "$0.1",
+//     network: "base",
+//   },
+// }, facilitator));
 
 app.use((err, req, res, next) => {
   const requestId = req.headers['x-request-id'] as string;

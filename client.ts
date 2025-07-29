@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 
 config();
 
-const privateKey = process.env.PRIVATE_KEY as Hex;
+const privateKey = process.env.MAINNET_PRIVATE_KEY as Hex;
 const baseURL = 'https://hyperbolic-x402.vercel.app';
 // const baseURL = 'http://localhost:3000';
 
@@ -36,11 +36,11 @@ const requestOptions: RequestInit = {
     "X-Request-ID": requestId,
   },
   body: JSON.stringify({
-    model: "meta-llama/Llama-3.2-3B-Instruct",
+    model: "meta-llama/Meta-Llama-3.1-405B-Instruct",
     messages: [
-      { role: "user", content: "What is 1+1?" }
+      { role: "user", content: "Tell me the theory of the universe" }
     ],
-    max_tokens: 512,
+    max_tokens: 4000,
     temperature: 0.1,
     top_p: 0.9,
     stream: false
