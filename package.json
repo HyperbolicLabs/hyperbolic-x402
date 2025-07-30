@@ -2,6 +2,7 @@
 	"name": "x402-hyperbolic-vercel",
 	"version": "1.0.0",
 	"description": "x402 Chat Completions API with Hyperbolic AI on Vercel",
+	"type": "module",
 	"main": "api/index.ts",
 	"scripts": {
 		"client": "tsx client.ts",
