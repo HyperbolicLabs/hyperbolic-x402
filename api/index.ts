@@ -128,58 +128,60 @@ function createPaymentMiddleware() {
           discoverable: true,
           description: "AI chat completion service powered by Hyperbolic's open-source models",
           inputSchema: {
-            type: "object",
-            properties: {
-              model: {
-                type: "string",
-                description: "The AI model to use for completion (e.g., 'meta-llama/Meta-Llama-3.1-405B-Instruct')",
-                minLength: 1
-              },
-              messages: {
-                type: "array",
-                description: "Array of conversation messages with role and content",
-                items: {
-                  type: "object",
-                  properties: {
-                    role: {
-                      type: "string",
-                      enum: ["system", "user", "assistant"],
-                      description: "The role of the message sender"
-                    },
-                    content: {
-                      type: "string",
-                      description: "The content of the message",
-                      minLength: 1
-                    }
-                  },
-                  required: ["role", "content"]
+            body: {
+              type: "object",
+              properties: {
+                model: {
+                  type: "string",
+                  description: "The AI model to use for completion (e.g., 'meta-llama/Meta-Llama-3.1-405B-Instruct')",
+                  minLength: 1
                 },
-                minItems: 1
+                messages: {
+                  type: "array",
+                  description: "Array of conversation messages with role and content",
+                  items: {
+                    type: "object",
+                    properties: {
+                      role: {
+                        type: "string",
+                        enum: ["system", "user", "assistant"],
+                        description: "The role of the message sender"
+                      },
+                      content: {
+                        type: "string",
+                        description: "The content of the message",
+                        minLength: 1
+                      }
+                    },
+                    required: ["role", "content"]
+                  },
+                  minItems: 1
+                },
+                max_tokens: {
+                  type: "number",
+                  description: "Maximum number of tokens to generate in the response (1-131072)",
+                  minimum: 1,
+                  maximum: 131072
+                },
+                temperature: {
+                  type: "number",
+                  description: "Controls randomness in response generation (0.0-2.0, lower = more focused)",
+                  minimum: 0,
+                  maximum: 2
+                },
+                top_p: {
+                  type: "number", 
+                  description: "Controls diversity via nucleus sampling (0.0-1.0, lower = more focused)",
+                  minimum: 0,
+                  maximum: 1
+                },
+                stream: {
+                  type: "boolean",
+                  description: "Whether to stream the response incrementally"
+                }
               },
-              max_tokens: {
-                type: "number",
-                description: "Maximum number of tokens to generate in the response (1-131072)",
-                minimum: 1,
-                maximum: 131072
-              },
-              temperature: {
-                type: "number",
-                description: "Controls randomness in response generation (0.0-2.0, lower = more focused)",
-                minimum: 0,
-                maximum: 2
-              },
-              top_p: {
-                type: "number", 
-                description: "Controls diversity via nucleus sampling (0.0-1.0, lower = more focused)",
-                minimum: 0,
-                maximum: 1
-              },
-              stream: {
-                type: "boolean",
-                description: "Whether to stream the response incrementally"
-              }
-            },
-            required: ["model", "messages"]
+              required: ["model", "messages"]
+            }
           },
           outputSchema: {
             type: "object",
